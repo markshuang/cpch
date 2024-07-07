@@ -629,3 +629,204 @@ GitHub Copilot: To simulate S3 functionalities with MinIO for Iceberg tables whi
 - **Networking**: If running MinIO or AWS MWAA Local Runner in Docker, ensure proper network configurations for containers to communicate.
 
 This setup allows you to simulate a complex data pipeline involving Iceberg tables and AWS Glue, entirely on your local development environment, facilitating development and testing without relying on cloud resources.
+
+markshuang: how can we use the aws mwaa local runner along with aws glue running locally to create the unit test for both aws glue job and airflow DAG workflow?
+
+GitHub Copilot: Creating unit tests for both AWS Glue jobs and Airflow DAG workflows using AWS MWAA Local Runner and a locally running AWS Glue service involves several steps. The goal is to simulate the environment as closely as possible to how it would run in AWS, but locally on your development machine. Here's a step-by-step guide to achieve this:
+
+### Step 1: Set Up Your Local Environment
+
+1. **AWS Glue Local Environment**: Ensure you have a local version of AWS Glue running. This could be a mock server that mimics the AWS Glue API responses. You can use tools like LocalStack or a custom mock server that you've set up.
+
+2. **MinIO for S3 Simulation**: Set up MinIO to simulate S3 buckets locally. This is where your Glue jobs will read from and write to.
+
+3. **AWS MWAA Local Runner**: Set up AWS MWAA Local Runner following the official documentation. This will simulate the Airflow environment.
+
+4. **Configure Environment Variables**: Based on the excerpt, configure the necessary environment variables to point to your local Glue service and MinIO for S3.
+
+### Step 2: Write Unit Tests for AWS Glue Job
+
+1. **Mock S3 and Glue Clients**: Use libraries like `moto` to mock S3 and Glue clients in your tests. This allows you to simulate AWS services without making actual calls.
+
+2. **Glue Job Script**: Write a unit test for your Glue job script. Use the `unittest` framework in Python. Mock data inputs and outputs and assert the transformations or operations performed by your Glue job.
+
+   ```python
+   import unittest
+   from moto import mock_s3
+   from your_glue_script import your_glue_job_function
+
+   class TestGlueJob(unittest.TestCase):
+       @mock_s3
+       def test_glue_job_transformations(self):
+           # Setup mock S3 environment
+           # Call your Glue job function
+           # Assert the expected outcomes
+           pass
+   ```
+
+### Step 3: Write Unit Tests for Airflow DAG
+
+1. **Airflow Testing Framework**: Utilize Airflow's built-in testing framework. Airflow provides a `DagBag` class to load your DAGs and test whether they load correctly.
+
+2. **Mock Operators**: If your DAG includes custom operators that interact with AWS services, use mocking to simulate their behavior.
+
+3. **Test Execution**: Write tests to check if tasks within your DAG are set up correctly and have the expected dependencies.
+
+   ```python
+   import unittest
+   from airflow.models import DagBag
+
+   class TestMyAirflowDAG(unittest.TestCase):
+       def setUp(self):
+           self.dagbag = DagBag()
+
+       def test_dag_loaded(self):
+           dag = self.dagbag.get_dag(dag_id='your_dag_id')
+           self.assertFalse(len(self.dagbag.import_errors), "Failed to load DAG")
+           self.assertIsNotNone(dag, "DAG not found")
+           self.assertEqual(len(dag.tasks), expected_number_of_tasks, "Unexpected number of tasks")
+   ```
+
+### Step 4: Integration Testing
+
+For integration testing, where you want to test the interaction between Airflow and Glue locally:
+
+1. **Use Docker Compose**: Set up a Docker Compose environment that includes your Airflow service (using MWAA Local Runner), MinIO, and your mock AWS Glue service.
+
+2. **End-to-End Test**: Write an end-to-end test script that triggers your DAG using Airflow's CLI or API, ensuring that the DAG successfully interacts with the mocked AWS Glue service and MinIO.
+
+3. **Assertions**: Assert the outcomes based on the expected results in MinIO (for data written by Glue jobs) and the task execution status in Airflow.
+
+### Conclusion
+
+By following these steps, you can create a comprehensive testing suite for your AWS Glue jobs and Airflow DAGs, simulating their interaction with AWS services locally. This approach helps in catching issues early in the development cycle, making your data pipelines more robust and reliable.
+
+markshuang: please use pytest instead of unittest for above unit test for DAG and glue job?
+
+GitHub Copilot: To rewrite the unit tests for both the AWS Glue job and the Airflow DAG using `pytest` instead of `unittest`, follow the structure below. `pytest` offers a more straightforward syntax and powerful features for Python testing.
+
+### Pytest for AWS Glue Job
+
+First, ensure you have `pytest` and `moto` installed in your environment to mock AWS services.
+
+```shell
+pip install pytest moto
+```
+
+Then, create a test file for your Glue job, for example, `test_glue_job.py`:
+
+```python
+import pytest
+from moto import mock_s3
+from your_glue_script import your_glue_job_function
+
+@pytest.fixture(scope="function")
+def aws_credentials():
+    """Mocked AWS Credentials for moto."""
+    import os
+    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+    os.environ["
+
+AWS
+
+_SECRET_ACCESS_KEY"] = "testing"
+    os.environ["AWS_SECURITY_TOKEN"] = "testing"
+    os.environ["AWS_SESSION_TOKEN"] = "testing"
+
+@pytest.fixture(scope="function")
+def s3(aws_credentials):
+    with mock_s3():
+        yield
+
+def test_glue_job_transformations(s3):
+    # Setup mock S3 environment
+    # Call your Glue job function
+    # Assert the expected outcomes
+    pass
+```
+
+### Pytest for Airflow DAG
+
+Ensure you have Airflow installed in your testing environment, or install it in a virtual environment to avoid conflicts.
+
+```shell
+pip install apache-airflow
+```
+
+Create a test file for your DAG, for example, `test_my_dag.py`:
+
+```python
+import pytest
+from airflow.models import DagBag
+
+@pytest.fixture()
+def dag_bag():
+    return DagBag()
+
+def test_dag_loaded(dag_bag):
+    dag_id = 'your_dag_id'
+    dag = dag_bag.get_dag(dag_id=dag_id)
+    assert dag_id in dag_bag.dags
+    assert len(dag.tasks) == expected_number_of_tasks
+
+def test_task_dependencies(dag_bag):
+    """Test that the DAG has the correct task dependencies set up."""
+    dag = dag_bag.get_dag(dag_id='your_dag_id')
+    # Example: Check if 'start_task' is followed by 'next_task'
+    start_task = dag.get_task('start_task')
+    next_task_ids = list(map(lambda task: task.task_id, start_task.downstream_list))
+    assert 'next_task' in next_task_ids
+```
+
+### Running the Tests
+
+To run your tests, simply execute `pytest` in your terminal. Pytest will automatically discover tests in files prefixed with `test_`:
+
+```shell
+pytest
+```
+
+This approach leverages `pytest` fixtures for setup and teardown, providing a clean, efficient way to write tests for both AWS Glue jobs and Airflow DAGs.
+
+markshuang: What are some best practices for testing AWS Glue jobs and Airflow DAGs locally?
+
+GitHub Copilot: Testing AWS Glue jobs and Airflow DAGs locally involves simulating the AWS environment and ensuring that your data pipelines work as expected before deploying them to production. Here are some best practices to follow:
+
+### 1. Isolate Environments
+
+- **Use Docker**: Containerize your local development environment using Docker. This includes your Airflow instance, AWS Glue local environment, and any other services like MinIO for S3 simulation. Docker ensures consistency across different development environments and simplifies dependency management.
+
+### 2. Mock AWS Services
+
+- **Utilize `moto` or LocalStack**: For AWS Glue jobs, use `moto` to mock AWS services in your unit tests. For a more integrated approach, including services not covered by `moto`, consider using LocalStack. This allows you to test AWS service interactions without incurring costs or requiring network connectivity.
+
+### 3. Use Airflow's Test Features
+
+- **Task Instance Debugging**: Use Airflow's `TaskInstance` class to run tasks individually in a Python script or interactive environment. This allows for detailed debugging of task execution.
+- **DAG Testing**: Utilize Airflow's built-in commands like `airflow dags test` to test the execution of DAGs for a specific date. This command simulates the scheduler running your DAG without the overhead of running the full scheduler.
+
+### 4. Implement Comprehensive Testing Strategies
+
+- **Unit Tests**: Write unit tests for individual components of your DAGs and Glue scripts. Focus on testing the logic within operators and the transformations within Glue jobs.
+- **Integration Tests**: Create tests that simulate the end-to-end execution of your data pipelines. This includes interactions between Airflow tasks, AWS Glue jobs, and any other services involved.
+- **Data Validation Tests**: Include tests that validate the data output by your Glue jobs. Ensure that the data meets expected formats, types, and value ranges.
+
+### 5. Automate Your Testing Pipeline
+
+- **Continuous Integration (CI)**: Integrate your tests into a CI pipeline using tools like GitHub Actions, Jenkins, or GitLab CI. This ensures that tests are automatically run on every commit, helping to catch issues early.
+
+### 6. Configuration and Secrets Management
+
+- **Environment Variables**: Use environment variables for configuration settings and secrets, as shown in the excerpt. This makes it easier to switch between local and production environments without changing your code.
+- **Secrets Management**: For sensitive information, consider using a secrets manager like AWS Secrets Manager, even in local development, to avoid hard-coding credentials.
+
+### 7. Documentation and Examples
+
+- **Document Local Setup**: Clearly document the setup process for your local development environment, including any Docker containers, environment variables, and mock services required.
+- **Provide Examples**: Include example DAGs and Glue scripts that demonstrate how to interact with the local environment. This is especially helpful for new team members.
+
+### 8. Clean Up Resources
+
+- **Automate Cleanup**: Implement scripts or use Docker Compose features to clean up and reset your local environment. This helps prevent conflicts and ensures that tests run in a clean state.
+
+By following these best practices, you can create a robust and efficient local testing environment for AWS Glue jobs and Airflow DAGs, reducing bugs and improving the quality of your data pipelines.
